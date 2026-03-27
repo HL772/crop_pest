@@ -1,0 +1,186 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>作物病虫害智能识别系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <section class="hero-main">
+          <p class="eyebrow">Crop Diagnosis</p>
+          <h1>作物病虫害智能识别系统</h1>
+          <p class="hero-text">
+            上传作物图片后，系统会输出识别结果、置信度排序和防治策略信息，辅助进行病虫害判断与复核。
+          </p>
+
+          <div class="stepper" id="stepper">
+            <article class="step-card is-current" data-step="model">
+              <span class="step-index">1</span>
+              <div>
+                <strong>加载模型</strong>
+                <small>确认识别引擎与输入规格</small>
+              </div>
+            </article>
+            <article class="step-card" data-step="image">
+              <span class="step-index">2</span>
+              <div>
+                <strong>准备样本</strong>
+                <small>上传图片或选择示例图库</small>
+              </div>
+            </article>
+            <article class="step-card" data-step="diagnosis">
+              <span class="step-index">3</span>
+              <div>
+                <strong>查看诊断</strong>
+                <small>读取主结论、候选和防治建议</small>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <aside class="hero-side">
+          <div class="status-badge" id="serviceStatus">正在连接服务</div>
+          <div class="metric-grid">
+            <article class="metric-card metric-card-wide">
+              <span>当前模型</span>
+              <strong id="modelName">未加载</strong>
+            </article>
+            <article class="metric-card">
+              <span>知识库类别</span>
+              <strong id="knowledgeCount">-</strong>
+            </article>
+            <article class="metric-card">
+              <span>示例样本</span>
+              <strong id="sampleCount">-</strong>
+            </article>
+            <article class="metric-card">
+              <span>输入尺寸</span>
+              <strong id="imageSize">-</strong>
+            </article>
+            <article class="metric-card">
+              <span>运行设备</span>
+              <strong id="deviceName">-</strong>
+            </article>
+          </div>
+        </aside>
+      </header>
+
+      <main class="dashboard">
+        <section class="panel control-panel">
+          <div class="panel-head">
+            <div>
+              <h2>模型与图片</h2>
+              <p>先确定模型，再上传图片或点选示例样本。</p>
+            </div>
+          </div>
+
+          <label class="field-label" for="modelSelect">模型选择</label>
+          <div class="model-row">
+            <select id="modelSelect"></select>
+            <button id="loadModelBtn" class="ghost-btn">加载模型</button>
+          </div>
+
+          <label class="upload-zone" for="imageInput" id="uploadZone">
+            <input id="imageInput" type="file" accept="image/png,image/jpeg,image/jpg" hidden />
+            <div class="upload-copy" id="uploadCopy">
+              <span class="upload-mark"></span>
+              <span class="upload-title">拖拽图片到这里，或点击选择文件</span>
+              <span class="upload-subtitle">支持 JPG / PNG，适合田间叶片、果面和病斑图像</span>
+            </div>
+            <img id="previewImage" alt="上传预览" hidden />
+          </label>
+
+          <div class="action-row">
+            <button id="predictBtn" class="primary-btn" disabled>开始识别</button>
+            <button id="resetBtn" class="ghost-btn ghost-btn-subtle">重置当前样本</button>
+          </div>
+          <p class="inline-message" id="actionMessage">请先加载模型，再选择一张待识别图片。</p>
+
+          <section class="sample-section">
+            <div class="section-subhead">
+              <h3>示例图库</h3>
+              <span id="sampleHint">点击即可载入样图</span>
+            </div>
+            <div id="sampleGallery" class="sample-gallery empty-state">
+              正在读取 sample_images 目录…
+            </div>
+          </section>
+        </section>
+
+        <section class="panel diagnosis-panel">
+          <div class="panel-head">
+            <div>
+              <h2>诊断总览</h2>
+              <p>主结果优先展示，Top-5 候选用于辅助判断和人工复核。</p>
+            </div>
+            <div class="info-pill" id="latestFile">未选择图片</div>
+          </div>
+
+          <div id="resultOverview" class="result-overview empty-overview">
+            上传样本后，这里会展示诊断主结论、风险等级和下一步建议。
+          </div>
+
+          <section class="candidate-section">
+            <div class="section-subhead">
+              <h3>Top-5 候选结果</h3>
+              <span id="predictionTimestamp">等待推理</span>
+            </div>
+            <div id="candidateList" class="candidate-list empty-state">
+              完成识别后，这里会出现候选结果卡片。
+            </div>
+          </section>
+        </section>
+
+        <aside class="side-column">
+          <section class="panel detail-panel">
+            <div class="panel-head">
+              <div>
+                <h2>诊断细节与策略</h2>
+                <p>把结论拆成更易读的模块，并承接防治资料查询。</p>
+              </div>
+              <div class="info-pill info-pill-muted" id="strategyStatus">尚未查询</div>
+            </div>
+
+            <div id="detailSummary" class="detail-summary empty-detail">
+              等待识别结果。
+            </div>
+
+            <div class="detail-divider"></div>
+
+            <div class="section-subhead">
+              <h3>防治策略</h3>
+              <span id="strategyHint">点击候选卡片按钮查询</span>
+            </div>
+            <div id="strategyPanel" class="strategy-panel empty-detail">
+              当前未加载策略内容。
+            </div>
+            <div id="strategySources" class="source-list"></div>
+          </section>
+
+          <section class="panel history-panel">
+            <div class="panel-head">
+              <div>
+                <h2>最近识别记录</h2>
+                <p>记录保存在浏览器本地，方便你快速回看最近几次结果。</p>
+              </div>
+              <button id="clearHistoryBtn" class="ghost-btn ghost-btn-small">清空</button>
+            </div>
+            <div id="historyList" class="history-list empty-state">暂无历史记录。</div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
+
