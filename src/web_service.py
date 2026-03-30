@@ -26,15 +26,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 MODEL_DIR = BASE_DIR / "trained_models"
 STATIC_DIR = BASE_DIR / "web"
 SAMPLE_DIR = BASE_DIR / "sample_images"
-DEEPSEEK_API_KEY = os.getenv(
-    "DEEPSEEK_API_KEY",
-    "sk-a2RcvEXRSsdkqhGXHOP9SpqrVsqr9InV0eSzMBcyPhqZexkI",
-).strip()
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
-DEEPSEEK_API_URL = os.getenv(
-    "DEEPSEEK_API_URL",
-    "https://api.deepseek.com/chat/completions",
-).strip()
+DEFAULT_OPENAI_COMPAT_API_KEY = "sk-a2RcvEXRSsdkqhGXHOP9SpqrVsqr9InV0eSzMBcyPhqZexkI"
+DEFAULT_OPENAI_COMPAT_MODEL = "deepseek-chat"
+DEFAULT_OPENAI_COMPAT_BASE_URL = "https://oapi.uk/v1"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 logger = logging.getLogger(__name__)
 
@@ -102,13 +96,34 @@ class InferenceService:
         return self.model_summary()
 
     def model_summary(self) -> dict[str, Any]:
+        parameter_count = 0
+        if self.model is not None:
+            parameter_count = sum(parameter.numel() for parameter in self.model.parameters())
+
+        metric_keys = ("val_f1", "best_f1", "f1_score", "macro_f1", "val_acc", "best_acc", "accuracy")
+        metric_summary = ""
+        for key in metric_keys:
+            value = self.loaded_model_config.get(key)
+            if value is None:
+                continue
+            if isinstance(value, float):
+                metric_summary = f"{key}: {value:.4f}"
+            else:
+                metric_summary = f"{key}: {value}"
+            break
+
         return {
             "loaded": self.model is not None,
             "model_path": self.loaded_model_path,
             "model_name": self.loaded_model_config.get("model_name", "未知"),
+            "backbone": self.loaded_model_config.get("model_name", "未知"),
             "image_size": self.loaded_model_config.get("image_size", 224),
             "knowledge_base_count": len(self.knowledge_base),
             "device": str(self.device),
+            "parameter_count": parameter_count,
+            "metric_summary": metric_summary or "未提供评估指标",
+            "drop_rate": self.loaded_model_config.get("drop_rate", "-"),
+            "drop_path_rate": self.loaded_model_config.get("drop_path_rate", "-"),
         }
 
     @staticmethod
@@ -223,19 +238,55 @@ class InferenceService:
 
 
 def get_strategy_status() -> dict[str, str | bool]:
-    if not DEEPSEEK_API_KEY:
-        return {"available": False, "reason": "未配置 DeepSeek API Key。"}
+    api_key, _, base_url = get_strategy_config()
 
-    if not DEEPSEEK_API_KEY.startswith("sk-"):
-        return {"available": False, "reason": "当前配置的 key 不是 DeepSeek 常见格式。"}
+    if not api_key:
+        return {"available": False, "reason": "未配置 OpenAI 兼容接口 API Key。"}
 
-    if not DEEPSEEK_API_URL:
-        return {"available": False, "reason": "未配置 DeepSeek API 地址。"}
+    if not base_url:
+        return {"available": False, "reason": "未配置 OpenAI 兼容接口 Base URL。"}
 
-    return {"available": True, "reason": "DeepSeek 资料整理可用。"}
+    return {"available": True, "reason": "OpenAI 兼容策略服务可用。"}
 
 
-def create_deepseek_payload(pest_name: str) -> dict[str, Any]:
+def get_strategy_config() -> tuple[str, str, str]:
+    api_key = (
+        os.getenv("OPENAI_COMPAT_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("DEEPSEEK_API_KEY")
+        or DEFAULT_OPENAI_COMPAT_API_KEY
+        or ""
+    ).strip()
+    model = (
+        os.getenv("OPENAI_COMPAT_MODEL")
+        or os.getenv("OPENAI_MODEL")
+        or os.getenv("DEEPSEEK_MODEL")
+        or DEFAULT_OPENAI_COMPAT_MODEL
+    ).strip() or DEFAULT_OPENAI_COMPAT_MODEL
+    base_url = (
+        os.getenv("OPENAI_COMPAT_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or os.getenv("DEEPSEEK_API_URL")
+        or DEFAULT_OPENAI_COMPAT_BASE_URL
+    ).strip() or DEFAULT_OPENAI_COMPAT_BASE_URL
+    return api_key, model, base_url
+
+
+def build_chat_completions_url() -> str:
+    _, _, base_url = get_strategy_config()
+    base_url = base_url.rstrip("/")
+    if base_url.endswith("/chat/completions"):
+        return base_url
+    return f"{base_url}/chat/completions"
+
+
+def create_strategy_payload(
+    pest_name: str,
+    question: str = "",
+    context: str = "",
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    _, model, _ = get_strategy_config()
     system_prompt = (
         "你是一名农业植保资料整理助手。"
         "请围绕用户提供的病虫害名称，输出结构化的中文资料摘要。"
@@ -246,13 +297,38 @@ def create_deepseek_payload(pest_name: str) -> dict[str, Any]:
         "如果没有真实来源链接，url 置为空字符串。"
         "sources 是数组，每项包含 title、url。"
     )
-    user_prompt = (
-        f"请整理“{pest_name}”的相关资料，重点包括："
-        "典型症状或危害表现、常见发生条件、田间处理思路、综合防治建议、使用提醒。"
-        "输出要适合网页前端直接展示，语言简洁，不要使用 Markdown。"
-    )
+
+    if question:
+        history_text = ""
+        if history:
+            lines = []
+            for item in history[-6:]:
+                role = "用户" if item.get("role") == "user" else "助手"
+                content = str(item.get("content", "")).strip()
+                if content:
+                    lines.append(f"{role}: {content}")
+            if lines:
+                history_text = "\n对话历史:\n" + "\n".join(lines)
+
+        context_text = f"\n已有资料摘要:\n{context.strip()}" if context.strip() else ""
+        user_prompt = (
+            f"当前病虫害对象为“{pest_name}”。"
+            f"{context_text}"
+            f"{history_text}"
+            f"\n用户的追问是：{question.strip()}"
+            "\n请围绕追问给出简洁、可执行的中文答复，并继续输出 JSON 对象。"
+            "summary 里给出本轮结论，items 拆成 2-4 条重点，sources 保留可引用来源。"
+            "输出适合网页前端直接展示，不要使用 Markdown。"
+        )
+    else:
+        user_prompt = (
+            f"请整理“{pest_name}”的相关资料，重点包括："
+            "典型症状或危害表现、常见发生条件、田间处理思路、综合防治建议、使用提醒。"
+            "输出要适合网页前端直接展示，语言简洁，不要使用 Markdown。"
+        )
+
     return {
-        "model": DEEPSEEK_MODEL,
+        "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -264,12 +340,12 @@ def create_deepseek_payload(pest_name: str) -> dict[str, Any]:
     }
 
 
-def format_deepseek_error(status_code: int, error_body: str) -> str:
+def format_strategy_error(status_code: int, error_body: str) -> str:
     detail = error_body.strip()
     try:
         payload = json.loads(error_body)
     except json.JSONDecodeError:
-        return f"DeepSeek 请求失败: HTTP {status_code} {detail or '未知错误'}"
+        return f"策略服务请求失败: HTTP {status_code} {detail or '未知错误'}"
 
     if isinstance(payload, dict):
         error_info = payload.get("error", payload)
@@ -281,17 +357,23 @@ def format_deepseek_error(status_code: int, error_body: str) -> str:
                 or detail
             )
 
-    return f"DeepSeek 请求失败: HTTP {status_code} {detail or '未知错误'}"
+    return f"策略服务请求失败: HTTP {status_code} {detail or '未知错误'}"
 
 
-def call_deepseek_for_strategy(pest_name: str) -> dict[str, Any]:
-    payload = create_deepseek_payload(pest_name)
+def call_strategy_service(
+    pest_name: str,
+    question: str = "",
+    context: str = "",
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    api_key, _, _ = get_strategy_config()
+    payload = create_strategy_payload(pest_name, question=question, context=context, history=history)
     request = urllib.request.Request(
-        DEEPSEEK_API_URL,
+        build_chat_completions_url(),
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
         },
         method="POST",
     )
@@ -301,15 +383,15 @@ def call_deepseek_for_strategy(pest_name: str) -> dict[str, Any]:
             raw = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(format_deepseek_error(exc.code, error_body)) from exc
+        raise RuntimeError(format_strategy_error(exc.code, error_body)) from exc
     except Exception as exc:
-        raise RuntimeError(f"DeepSeek 请求失败: {exc}") from exc
+        raise RuntimeError(f"策略服务请求失败: {exc}") from exc
 
     try:
         response_data = json.loads(raw)
         content = response_data["choices"][0]["message"]["content"]
     except Exception as exc:
-        raise RuntimeError(f"无法解析 DeepSeek 响应: {exc}") from exc
+        raise RuntimeError(f"无法解析策略服务响应: {exc}") from exc
 
     try:
         structured = json.loads(content)
@@ -341,6 +423,8 @@ def call_deepseek_for_strategy(pest_name: str) -> dict[str, Any]:
 
     return {
         "name": pest_name,
+        "mode": "followup" if question else "initial",
+        "question": question,
         "summary": str(structured.get("summary", f"已整理 {pest_name} 的相关资料。")),
         "items": normalized_items,
         "sources": normalized_sources,
@@ -355,7 +439,7 @@ async def lifespan(_: FastAPI):
 
 
 service = InferenceService()
-app = FastAPI(title="作物病虫害智能识别 Web 服务", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="穹农智核（AgriOmniCore）Web 服务", version="2.0.0", lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 if SAMPLE_DIR.exists():
@@ -426,17 +510,30 @@ async def predict(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/strategy")
-def fetch_strategy(payload: dict[str, str]) -> dict[str, Any]:
+def fetch_strategy(payload: dict[str, Any]) -> dict[str, Any]:
     pest_name = payload.get("name", "").strip()
     if not pest_name:
         raise HTTPException(status_code=400, detail="缺少病虫害名称。")
+
+    question = str(payload.get("question", "")).strip()
+    context = str(payload.get("context", "")).strip()
+    raw_history = payload.get("history", [])
+    history: list[dict[str, str]] = []
+    if isinstance(raw_history, list):
+        for item in raw_history:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "")).strip()
+            content = str(item.get("content", "")).strip()
+            if role and content:
+                history.append({"role": role, "content": content})
 
     strategy_status = get_strategy_status()
     if not strategy_status["available"]:
         raise HTTPException(status_code=503, detail=str(strategy_status["reason"]))
 
     try:
-        return call_deepseek_for_strategy(pest_name)
+        return call_strategy_service(pest_name, question=question, context=context, history=history)
     except Exception as exc:
         logger.exception("Strategy lookup failed for %s", pest_name)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -446,4 +543,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("web_service:app", host="127.0.0.1", port=8000, reload=False)
+
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>作物病虫害智能识别系统</title>
+    <title>穹农智核（AgriOmniCore）</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,39 +16,65 @@
     <div class="page-shell">
       <header class="hero">
         <section class="hero-main">
-          <p class="eyebrow">Crop Diagnosis</p>
-          <h1>作物病虫害智能识别系统</h1>
+          <p class="eyebrow">AgriOmniCore</p>
+          <h1>穹农智核（AgriOmniCore）</h1>
           <p class="hero-text">
-            上传作物图片后，系统会输出识别结果、置信度排序和防治策略信息，辅助进行病虫害判断与复核。
+            全称：穹农智核：跨域多源融合多标签病虫害识别与大模型智能问答平台。
           </p>
+
+          <div class="hero-capability-strip" aria-label="系统能力概览">
+            <span class="hero-capability-item">图像识别</span>
+            <span class="hero-capability-item">策略检索</span>
+            <span class="hero-capability-item">批量巡检</span>
+            <span class="hero-capability-item">会话统计</span>
+          </div>
 
           <div class="stepper" id="stepper">
             <article class="step-card is-current" data-step="model">
               <span class="step-index">1</span>
               <div>
                 <strong>加载模型</strong>
-                <small>确认识别引擎与输入规格</small>
+                <small>确认骨干网络、输入尺寸与设备状态</small>
               </div>
             </article>
             <article class="step-card" data-step="image">
               <span class="step-index">2</span>
               <div>
                 <strong>准备样本</strong>
-                <small>上传图片或选择示例图库</small>
+                <small>单图上传、示例对照或加入批量任务</small>
               </div>
             </article>
             <article class="step-card" data-step="diagnosis">
               <span class="step-index">3</span>
               <div>
-                <strong>查看诊断</strong>
-                <small>读取主结论、候选和防治建议</small>
+                <strong>诊断分析</strong>
+                <small>查看 Top-5 结果、风险等级与防治策略</small>
               </div>
             </article>
           </div>
+
+          <section class="hero-feature-grid" aria-label="系统展示要点">
+            <article class="hero-feature-card">
+              <h3>识别结果展示</h3>
+              <p>输出 Top-5 候选、风险等级、置信度分布与人工复核建议。</p>
+            </article>
+            <article class="hero-feature-card">
+              <h3>策略检索联动</h3>
+              <p>按候选病虫害一键获取防治资料，并支持继续追问。</p>
+            </article>
+            <article class="hero-feature-card">
+              <h3>巡检与统计</h3>
+              <p>支持批量识别、会话分析与阶段性结果导出。</p>
+            </article>
+          </section>
         </section>
 
-        <aside class="hero-side">
-          <div class="status-badge" id="serviceStatus">正在连接服务</div>
+        <aside class="hero-side"> 
+          <div class="hero-topline">
+            <div class="status-badge" id="serviceStatus">正在连接服务</div>
+            <div class="pulse-note" id="serviceNote">等待初始化</div>
+          </div>
+
           <div class="metric-grid">
             <article class="metric-card metric-card-wide">
               <span>当前模型</span>
@@ -70,23 +96,48 @@
               <span>运行设备</span>
               <strong id="deviceName">-</strong>
             </article>
+            <article class="metric-card">
+              <span>平均耗时</span>
+              <strong id="avgLatency">-</strong>
+            </article>
+            <article class="metric-card">
+              <span>会话诊断数</span>
+              <strong id="sessionCount">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>批量完成数</span>
+              <strong id="batchDoneCount">0</strong>
+            </article>
           </div>
         </aside>
       </header>
 
-      <main class="dashboard">
+
+      <nav class="workspace-nav" id="workspaceNav">
+        <button type="button" class="workspace-btn is-active" data-page="overview">全局总览</button>
+        <button type="button" class="workspace-btn" data-page="diagnosis">识别诊断</button>
+        <button type="button" class="workspace-btn" data-page="strategy">防治策略</button>
+        <button type="button" class="workspace-btn" data-page="analytics">会话统计</button>
+        <button type="button" class="workspace-btn" data-page="system">系统状态</button>
+        <button type="button" class="workspace-btn workspace-btn-accent" id="presentationToggle">演示模式</button>
+      </nav>
+
+      <main class="dashboard" id="dashboard">
         <section class="panel control-panel">
           <div class="panel-head">
             <div>
-              <h2>模型与图片</h2>
-              <p>先确定模型，再上传图片或点选示例样本。</p>
+              <h2>模型与样本控制台</h2>
+              <p>单张识别和批量巡检都从这里开始。</p>
             </div>
+            <div class="panel-tag">控制台</div>
           </div>
 
-          <label class="field-label" for="modelSelect">模型选择</label>
-          <div class="model-row">
-            <select id="modelSelect"></select>
-            <button id="loadModelBtn" class="ghost-btn">加载模型</button>
+          <div class="model-block">
+            <label class="field-label" for="modelSelect">模型选择</label>
+            <div class="model-row">
+              <select id="modelSelect"></select>
+              <button id="loadModelBtn" class="ghost-btn">加载模型</button>
+            </div>
           </div>
 
           <label class="upload-zone" for="imageInput" id="uploadZone">
@@ -94,7 +145,7 @@
             <div class="upload-copy" id="uploadCopy">
               <span class="upload-mark"></span>
               <span class="upload-title">拖拽图片到这里，或点击选择文件</span>
-              <span class="upload-subtitle">支持 JPG / PNG，适合田间叶片、果面和病斑图像</span>
+              <span class="upload-subtitle">适合叶片、果面、病斑局部特写，也可先从示例图库快速演示</span>
             </div>
             <img id="previewImage" alt="上传预览" hidden />
           </label>
@@ -110,71 +161,209 @@
               <h3>示例图库</h3>
               <span id="sampleHint">点击即可载入样图</span>
             </div>
-            <div id="sampleGallery" class="sample-gallery empty-state">
-              正在读取 sample_images 目录…
-            </div>
+            <div id="sampleGallery" class="sample-gallery empty-state">正在读取 sample_images 目录…</div>
           </section>
-        </section>
 
-        <section class="panel diagnosis-panel">
-          <div class="panel-head">
-            <div>
-              <h2>诊断总览</h2>
-              <p>主结果优先展示，Top-5 候选用于辅助判断和人工复核。</p>
-            </div>
-            <div class="info-pill" id="latestFile">未选择图片</div>
-          </div>
-
-          <div id="resultOverview" class="result-overview empty-overview">
-            上传样本后，这里会展示诊断主结论、风险等级和下一步建议。
-          </div>
-
-          <section class="candidate-section">
+          <section class="batch-section">
             <div class="section-subhead">
-              <h3>Top-5 候选结果</h3>
-              <span id="predictionTimestamp">等待推理</span>
+              <h3>批量识别工作台</h3>
+              <span id="batchHint">可同时加入多张图片并导出 CSV</span>
             </div>
-            <div id="candidateList" class="candidate-list empty-state">
-              完成识别后，这里会出现候选结果卡片。
+            <div class="batch-toolbar">
+              <label class="ghost-btn batch-picker" for="batchInput">添加批量图片</label>
+              <input id="batchInput" type="file" accept="image/png,image/jpeg,image/jpg" multiple hidden />
+              <button id="runBatchBtn" class="primary-btn" disabled>开始批量识别</button>
+              <button id="exportBatchBtn" class="ghost-btn" disabled>导出 CSV</button>
             </div>
+            <div id="batchSummary" class="batch-summary empty-state compact-empty">添加批量图片后，这里会显示总进度与预计剩余时间。</div>
+            <div id="batchQueue" class="batch-queue empty-state">批量任务为空。可拖入多张图片建立巡检队列。</div>
           </section>
         </section>
 
-        <aside class="side-column">
-          <section class="panel detail-panel">
+        <section class="center-column" id="centerColumn">
+          <section class="panel stage-panel" data-page-group="diagnosis">
             <div class="panel-head">
               <div>
-                <h2>诊断细节与策略</h2>
-                <p>把结论拆成更易读的模块，并承接防治资料查询。</p>
+                <h2>诊断舞台</h2>
+                <p>聚焦原图展示、扫描动画与识别过程状态。</p>
+              </div>
+              <div class="info-pill" id="latestFile">未选择图片</div>
+            </div>
+
+            <div class="vision-stage" id="visionStage">
+              <img id="stageImage" alt="诊断舞台图片" hidden />
+              <div class="vision-empty" id="visionEmpty">上传样本后，这里会显示诊断舞台。</div>
+              <div class="scan-overlay" id="scanOverlay" hidden>
+                <div class="scan-grid"></div>
+                <div class="scan-line"></div>
+                <div class="scan-text" id="scanText">AI 正在分析图像特征...</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel diagnosis-panel" data-page-group="diagnosis">
+            <div class="panel-head">
+              <div>
+                <h2>诊断总览</h2>
+                <p>展示主结论、候选分布、风险等级与人工复核建议。</p>
+              </div>
+              <div class="info-pill info-pill-muted" id="predictionTimestamp">等待推理</div>
+            </div>
+
+            <div id="resultOverview" class="result-overview empty-overview">
+              上传样本后，这里会展示诊断主结论、风险等级和下一步建议。
+            </div>
+
+            <section class="viz-showcase" id="vizShowcase">
+              <article class="viz-card">
+                <div class="viz-head">
+                  <h3>风险仪表盘</h3>
+                  <span id="riskGaugeLabel">等待识别结果</span>
+                </div>
+                <div class="risk-gauge">
+                  <div class="risk-gauge-arc"></div>
+                  <div class="risk-gauge-needle" id="riskGaugeNeedle"></div>
+                  <div class="risk-gauge-core"></div>
+                </div>
+                <div class="risk-gauge-value" id="riskGaugeValue">--</div>
+              </article>
+
+              <article class="viz-card">
+                <div class="viz-head">
+                  <h3>Top-5 置信度雷达</h3>
+                  <span id="radarHint">候选分布</span>
+                </div>
+                <svg id="radarSvg" class="radar-svg" viewBox="0 0 320 280" role="img" aria-label="Top-5 置信度雷达"></svg>
+                <div class="radar-legend" id="radarLegend">等待识别结果...</div>
+              </article>
+            </section>
+
+            <section class="candidate-section">
+              <div class="section-subhead">
+                <h3>Top-5 候选结果</h3>
+                <span id="candidateHint">识别完成后可点击候选卡片整理资料</span>
+              </div>
+              <div id="candidateList" class="candidate-list empty-state">完成识别后，这里会出现候选结果卡片。</div>
+            </section>
+          </section>
+        </section>
+
+        <aside class="insight-column" id="insightColumn">
+          <section class="panel strategy-panel-shell" data-page-group="strategy">
+            <div class="panel-head">
+              <div>
+                <h2>策略工作台</h2>
+                <p>结构化展示兼容接口返回的资料，并支持继续追问。</p>
               </div>
               <div class="info-pill info-pill-muted" id="strategyStatus">尚未查询</div>
             </div>
 
-            <div id="detailSummary" class="detail-summary empty-detail">
-              等待识别结果。
-            </div>
+            <div id="detailSummary" class="detail-summary empty-detail">等待识别结果。</div>
 
             <div class="detail-divider"></div>
 
             <div class="section-subhead">
-              <h3>防治策略</h3>
+              <h3>结构化资料</h3>
               <span id="strategyHint">点击候选卡片按钮查询</span>
             </div>
-            <div id="strategyPanel" class="strategy-panel empty-detail">
-              当前未加载策略内容。
-            </div>
+            <div id="strategyPanel" class="strategy-panel empty-detail">当前未加载策略内容。</div>
             <div id="strategySources" class="source-list"></div>
+
+            <div class="detail-divider"></div>
+
+            <div class="section-subhead">
+              <h3>农技追问</h3>
+              <span id="chatHint">可继续追问剂量、安全性或雨后调整</span>
+            </div>
+            <div id="strategyChat" class="chat-thread empty-detail">先完成一次策略查询，再继续追问。</div>
+            <div class="chat-composer">
+              <textarea id="strategyQuestion" rows="3" placeholder="例如：连续阴雨条件下如何调整处理节奏？" disabled></textarea>
+              <button id="sendStrategyBtn" class="primary-btn" disabled>发送追问</button>
+            </div>
           </section>
 
-          <section class="panel history-panel">
+          <section class="panel analytics-panel" data-page-group="analytics">
             <div class="panel-head">
               <div>
-                <h2>最近识别记录</h2>
-                <p>记录保存在浏览器本地，方便你快速回看最近几次结果。</p>
+                <h2>会话数据看板</h2>
+                <p>仅统计当前会话中的识别结果、风险分布与批量状态。</p>
               </div>
-              <button id="clearHistoryBtn" class="ghost-btn ghost-btn-small">清空</button>
+              <div class="panel-tag">会话</div>
             </div>
-            <div id="historyList" class="history-list empty-state">暂无历史记录。</div>
+
+            <div class="analytics-cards">
+              <article class="analytic-card">
+                <span>会话样本数</span>
+                <strong id="sessionDiagnoses">0</strong>
+              </article>
+              <article class="analytic-card">
+                <span>高可信占比</span>
+                <strong id="highRiskShare">0%</strong>
+              </article>
+              <article class="analytic-card">
+                <span>批量完成率</span>
+                <strong id="batchProgressText">0%</strong>
+              </article>
+            </div>
+
+            <div class="chart-block">
+              <div class="chart-head">
+                <h3>病虫害分布</h3>
+                <span id="labelChartHint">按 Top-1 结果统计</span>
+              </div>
+              <div id="labelChart" class="chart-list empty-state compact-empty">会话内暂无诊断数据。</div>
+            </div>
+
+            <div class="chart-block">
+              <div class="chart-head">
+                <h3>风险层级</h3>
+                <span>高可信 / 需复核 / 低确定性</span>
+              </div>
+              <div id="riskChart" class="chart-list empty-state compact-empty">等待识别结果。</div>
+            </div>
+
+            <div class="chart-block">
+              <div class="chart-head">
+                <h3>批量进度</h3>
+                <span>当前队列状态</span>
+              </div>
+              <div id="batchProgress" class="progress-stack empty-state compact-empty">尚未建立批量任务。</div>
+            </div>
+          </section>
+
+          <section class="panel system-panel" data-page-group="system">
+            <div class="panel-head">
+              <div>
+                <h2>系统监控与模型详情</h2>
+                <p>展示设备、模型骨干、参数规模与工程化运行指标。</p>
+              </div>
+              <div class="panel-tag">运行态</div>
+            </div>
+
+            <div class="system-grid">
+              <article class="system-card">
+                <span>模型骨干</span>
+                <strong id="modelBackbone">-</strong>
+              </article>
+              <article class="system-card">
+                <span>参数规模</span>
+                <strong id="modelParams">-</strong>
+              </article>
+              <article class="system-card">
+                <span>评估指标</span>
+                <strong id="modelMetric">-</strong>
+              </article>
+              <article class="system-card">
+                <span>Drop Path</span>
+                <strong id="modelDropPath">-</strong>
+              </article>
+            </div>
+
+            <div class="runtime-list" id="runtimeList">
+              <div class="runtime-item"><span>推理延迟</span><strong id="runtimeLatency">-</strong></div>
+              <div class="runtime-item"><span>策略状态</span><strong id="runtimeStrategy">-</strong></div>
+              <div class="runtime-item"><span>批量队列</span><strong id="runtimeBatch">0</strong></div>
+            </div>
           </section>
         </aside>
       </main>
@@ -183,4 +372,17 @@
     <script src="/assets/app.js"></script>
   </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
 
