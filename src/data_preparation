@@ -1,0 +1,151 @@
+
+"""
+数据准备脚本（多标签版）：
+1. 根据您提供的具体文件结构，收集图像路径和标签。
+   - Plant Pathology 2021: 通过 train.csv 读取，并正确处理多标签。
+   - IP102: 通过 train.txt 和 val.txt 读取。
+2. 整合所有数据，创建基于所有“基础类别”的统一标签映射 (共108类)。
+3. 为每个样本生成一个“多热编码”的标签向量。
+4. 将所有数据统一重新分割为训练集和验证集。
+5. 保存处理后的 CSV 文件 (标签为JSON字符串格式) 和标签映射 JSON 文件。
+"""
+import os
+import pandas as pd
+import json
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
+import warnings # 使用 warnings 模块替代 print，更标准
+
+# ========== 1. 配置数据路径 (保留您的结构) ==========
+# 主数据集目录
+BASE_DATA_DIR = Path(r"F:\machinelearning\shizhan\crop_pest_disease_classifier\datasets")
+
+# 输出目录
+PROCESSED_DIR = BASE_DATA_DIR / "processed"
+PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+RNG_SEED = 42 # 添加随机种子以保证结果可复现
+
+# ========== 2. 数据收集与验证 (修改为多标签逻辑) ==========
+print("🚀 开始收集和验证所有数据集的图像...")
+all_images = []
+all_labels_list = [] # 核心修改：使用一个列表来存储每个样本的标签列表
+skipped_count = 0
+
+# --- 2.1 处理数据集: plant_pathology_2021 ---
+print("\n--- 正在处理数据集: Plant Pathology 2021 ---")
+pp_dir = BASE_DATA_DIR / "plant_pathology_2021"
+pp_csv_path = pp_dir / "train.csv"
+pp_image_dir = pp_dir / "train_images"
+
+if pp_csv_path.exists():
+    df_pp = pd.read_csv(pp_csv_path)
+    for _, row in tqdm(df_pp.iterrows(), total=df_pp.shape[0], desc="处理 Plant Pathology"):
+        img_path = pp_image_dir / row['image']
+        if img_path.exists():
+            all_images.append(str(img_path))
+            # 核心修改：分割多标签，并加上'pp_'前缀
+            labels = [f"pp_{l.strip()}" for l in row['labels'].split()]
+            all_labels_list.append(labels)
+        else:
+            warnings.warn(f"❓ 路径不存在，跳过: {img_path}")
+            skipped_count += 1
+else:
+    warnings.warn(f"警告: Plant Pathology 的 CSV 文件未找到: {pp_csv_path}")
+
+# --- 2.2 处理数据集: IP102 ---
+print("\n--- 正在处理数据集: IP102 ---")
+ip_dir = BASE_DATA_DIR / "IP102"
+ip_image_dir = ip_dir / "images"
+# 注意：您的脚本中包含了train.txt和val.txt, 这里予以保留。通常test.txt也应包含。
+ip_txt_files = [ip_dir / "train.txt", ip_dir / "val.txt", ip_dir / "test.txt"]
+
+for txt_path in ip_txt_files:
+    if txt_path.exists():
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            for line in tqdm(lines, desc=f"处理 IP102 ({txt_path.name})"):
+                try:
+                    img_name, label_idx_str = line.strip().split()
+                    img_path = ip_image_dir / img_name
+
+                    if img_path.exists():
+                        all_images.append(str(img_path))
+                        # 核心修改：为IP102标签加上'ip102_'前缀，并放入列表中
+                        label = f"ip102_{label_idx_str}"
+                        all_labels_list.append([label])
+                    else:
+                        warnings.warn(f"❓ IP102 路径不存在，跳过: {img_path}")
+                        skipped_count += 1
+                except Exception as e:
+                    warnings.warn(f"❌ 处理 IP102 行失败: '{line.strip()}', 原因: {e}。跳过。")
+                    skipped_count += 1
+    else:
+        warnings.warn(f"警告: IP102 的 {txt_path.name} 文件未找到。")
+
+
+print(f"\n✅ 所有图像收集和验证完成！")
+print(f"总计有效图像: {len(all_images)}")
+print(f"总计跳过未找到的图像: {skipped_count}")
+
+# ========== 3. 创建多热编码和标签映射 ==========
+print("\n--- 正在创建标签映射和多热编码 ---")
+# 核心修改：从标签列表中提取所有唯一的基础类别
+all_base_labels = sorted(list(set(label for sublist in all_labels_list for label in sublist)))
+num_classes = len(all_base_labels)
+
+label_to_idx = {label: i for i, label in enumerate(all_base_labels)}
+idx_to_label = {i: label for i, label in enumerate(all_base_labels)}
+
+print(f"\n🏷️ 共发现 {num_classes} 个独立的基础类别。(预期为108)")
+
+# 核心修改：为每个样本创建多热编码向量
+multi_hot_labels = []
+for label_list in tqdm(all_labels_list, desc="生成多热编码"):
+    multi_hot = [0] * num_classes
+    for label in label_list:
+        if label in label_to_idx:
+            multi_hot[label_to_idx[label]] = 1
+    multi_hot_labels.append(multi_hot)
+
+# ========== 4. 创建DataFrame并分割 ==========
+df = pd.DataFrame({
+    'image_path': all_images,
+    'labels': multi_hot_labels  # labels列现在是多热编码列表
+})
+
+print("\n🔪 正在将所有数据统一分割为训练集和验证集 (80/20)...")
+train_df, val_df = train_test_split(
+    df,
+    test_size=0.2,
+    random_state=RNG_SEED,
+    # 移除 stratify，因为对多标签数据进行分层抽样很复杂，随机抽样是标准做法
+)
+
+print(f"训练集样本数: {len(train_df)}")
+print(f"验证集样本数: {len(val_df)}")
+
+# ========== 5. 保存结果 (多标签格式) ==========
+# 核心修改：更新输出文件名以反映多标签格式
+train_csv_path = PROCESSED_DIR / "train_data_multilabel.csv"
+val_csv_path = PROCESSED_DIR / "val_data_multilabel.csv"
+label_map_path = PROCESSED_DIR / "label_to_idx_multilabel.json"
+idx_map_path = PROCESSED_DIR / "idx_to_label_multilabel.json"
+
+# 核心修改：将列表转换为JSON字符串以便安全地存储在CSV中
+train_df['labels'] = train_df['labels'].apply(lambda x: json.dumps(x))
+val_df['labels'] = val_df['labels'].apply(lambda x: json.dumps(x))
+
+train_df.to_csv(train_csv_path, index=False, encoding='utf-8-sig')
+val_df.to_csv(val_csv_path, index=False, encoding='utf-8-sig')
+
+with open(label_map_path, 'w', encoding='utf-8') as f:
+    json.dump(label_to_idx, f, ensure_ascii=False, indent=4)
+with open(idx_map_path, 'w', encoding='utf-8') as f:
+    json.dump(idx_to_label, f, ensure_ascii=False, indent=4)
+
+print(f"\n💾 数据处理完毕，多标签格式的文件已保存至:\n"
+      f"  - 训练数据: {train_csv_path}\n"
+      f"  - 验证数据: {val_csv_path}\n"
+      f"  - 标签映射: {label_map_path}\n"
+      f"  - 索引映射: {idx_map_path}\n")

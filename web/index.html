@@ -52,21 +52,6 @@
               </div>
             </article>
           </div>
-
-          <section class="hero-feature-grid" aria-label="系统展示要点">
-            <article class="hero-feature-card">
-              <h3>识别结果展示</h3>
-              <p>输出 Top-5 候选、风险等级、置信度分布与人工复核建议。</p>
-            </article>
-            <article class="hero-feature-card">
-              <h3>策略检索联动</h3>
-              <p>按候选病虫害一键获取防治资料，并支持继续追问。</p>
-            </article>
-            <article class="hero-feature-card">
-              <h3>巡检与统计</h3>
-              <p>支持批量识别、会话分析与阶段性结果导出。</p>
-            </article>
-          </section>
         </section>
 
         <aside class="hero-side"> 
@@ -75,40 +60,36 @@
             <div class="pulse-note" id="serviceNote">等待初始化</div>
           </div>
 
-          <div class="metric-grid">
-            <article class="metric-card metric-card-wide">
-              <span>当前模型</span>
-              <strong id="modelName">未加载</strong>
+          <section class="status-timeline" id="statusTimeline" aria-label="系统运行状态时间轴">
+            <article class="status-node is-active" data-stage="model">
+              <span class="status-dot"></span>
+              <div>
+                <strong>模型状态</strong>
+                <small>加载与校验</small>
+              </div>
             </article>
-            <article class="metric-card">
-              <span>知识库类别</span>
-              <strong id="knowledgeCount">-</strong>
+            <article class="status-node" data-stage="inference">
+              <span class="status-dot"></span>
+              <div>
+                <strong>图像推理</strong>
+                <small>特征提取</small>
+              </div>
             </article>
-            <article class="metric-card">
-              <span>示例样本</span>
-              <strong id="sampleCount">-</strong>
+            <article class="status-node" data-stage="strategy">
+              <span class="status-dot"></span>
+              <div>
+                <strong>策略检索</strong>
+                <small>问答生成</small>
+              </div>
             </article>
-            <article class="metric-card">
-              <span>输入尺寸</span>
-              <strong id="imageSize">-</strong>
+            <article class="status-node" data-stage="batch">
+              <span class="status-dot"></span>
+              <div>
+                <strong>批量任务</strong>
+                <small>队列执行</small>
+              </div>
             </article>
-            <article class="metric-card">
-              <span>运行设备</span>
-              <strong id="deviceName">-</strong>
-            </article>
-            <article class="metric-card">
-              <span>平均耗时</span>
-              <strong id="avgLatency">-</strong>
-            </article>
-            <article class="metric-card">
-              <span>会话诊断数</span>
-              <strong id="sessionCount">0</strong>
-            </article>
-            <article class="metric-card">
-              <span>批量完成数</span>
-              <strong id="batchDoneCount">0</strong>
-            </article>
-          </div>
+          </section>
         </aside>
       </header>
 
@@ -340,6 +321,40 @@
               <div class="panel-tag">运行态</div>
             </div>
 
+            <div class="metric-grid">
+              <article class="metric-card metric-card-wide">
+                <span>当前模型</span>
+                <strong id="modelName">未加载</strong>
+              </article>
+              <article class="metric-card">
+                <span>知识库类别</span>
+                <strong id="knowledgeCount">-</strong>
+              </article>
+              <article class="metric-card">
+                <span>示例样本</span>
+                <strong id="sampleCount">-</strong>
+              </article>
+              <article class="metric-card">
+                <span>输入尺寸</span>
+                <strong id="imageSize">-</strong>
+              </article>
+              <article class="metric-card">
+                <span>运行设备</span>
+                <strong id="deviceName">-</strong>
+              </article>
+              <article class="metric-card">
+                <span>平均耗时</span>
+                <strong id="avgLatency">-</strong>
+              </article>
+              <article class="metric-card">
+                <span>会话诊断数</span>
+                <strong id="sessionCount">0</strong>
+              </article>
+              <article class="metric-card">
+                <span>批量完成数</span>
+                <strong id="batchDoneCount">0</strong>
+              </article>
+            </div>
             <div class="system-grid">
               <article class="system-card">
                 <span>模型骨干</span>
@@ -372,6 +387,10 @@
     <script src="/assets/app.js"></script>
   </body>
 </html>
+
+
+
+
 
 
 

@@ -8,6 +8,8 @@ try {
 const refs = {
   serviceStatus: document.getElementById("serviceStatus"),
   serviceNote: document.getElementById("serviceNote"),
+  statusTimeline: document.getElementById("statusTimeline"),
+  statusNodes: Array.from(document.querySelectorAll(".status-node")),
   modelName: document.getElementById("modelName"),
   knowledgeCount: document.getElementById("knowledgeCount"),
   sampleCount: document.getElementById("sampleCount"),
@@ -96,6 +98,7 @@ const state = {
   batchRunning: false,
   currentPage: "overview",
   presentationMode: false,
+  systemStage: "model",
 };
 
 function escapeHtml(value) {
@@ -262,6 +265,75 @@ function setScanning(active, text = "AI 正在分析图像特征...") {
   refs.scanOverlay.hidden = !active;
 }
 
+function setSystemTimeline(stage) {
+  const order = ["model", "inference", "strategy", "batch"];
+  const target = order.includes(stage) ? stage : "model";
+  state.systemStage = target;
+  if (!refs.statusNodes?.length) return;
+  const activeIndex = order.indexOf(target);
+  refs.statusNodes.forEach((node) => {
+    const nodeStage = node.dataset.stage || "";
+    const nodeIndex = order.indexOf(nodeStage);
+    node.classList.toggle("is-active", nodeIndex === activeIndex);
+    node.classList.toggle("is-done", nodeIndex > -1 && nodeIndex < activeIndex);
+  });
+}
+
+function animateVisiblePanels() {
+  const panels = Array.from(document.querySelectorAll(".dashboard .panel:not([hidden])"));
+  panels.forEach((panel) => {
+    panel.classList.remove("page-enter");
+    void panel.offsetWidth;
+    panel.classList.add("page-enter");
+  });
+}
+
+function applyRevealStagger(root, selector) {
+  if (!root) return;
+  const items = Array.from(root.querySelectorAll(selector));
+  items.forEach((item, index) => {
+    item.style.setProperty("--reveal-delay", `${Math.min(index * 45, 320)}ms`);
+    item.classList.remove("reveal-enter");
+    void item.offsetWidth;
+    item.classList.add("reveal-enter");
+  });
+}
+
+function animateNumericText(element, nextValue, formatter) {
+  if (!element) return;
+  const target = Number(nextValue);
+  const formatFn = typeof formatter === "function" ? formatter : (value) => `${Math.round(value)}`;
+  if (!Number.isFinite(target)) {
+    element.textContent = String(nextValue ?? "-");
+    return;
+  }
+
+  const current = Number(element.dataset.numericValue || 0);
+  if (!Number.isFinite(current) || Math.abs(target - current) < 0.001) {
+    element.dataset.numericValue = `${target}`;
+    element.textContent = formatFn(target);
+    return;
+  }
+
+  const startedAt = performance.now();
+  const duration = 380;
+  const delta = target - current;
+
+  const tick = (now) => {
+    const ratio = Math.min((now - startedAt) / duration, 1);
+    const eased = 1 - Math.pow(1 - ratio, 3);
+    const value = current + (delta * eased);
+    element.textContent = formatFn(value);
+    if (ratio < 1) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    element.dataset.numericValue = `${target}`;
+    element.textContent = formatFn(target);
+  };
+
+  requestAnimationFrame(tick);
+}
 function setWorkspacePage(page) {
   const target = ["overview", "diagnosis", "strategy", "analytics", "system"].includes(page) ? page : "overview";
   const showDiagnosis = target === "overview" || target === "diagnosis";
@@ -271,10 +343,20 @@ function setWorkspacePage(page) {
 
   refs.pagePanels.forEach((panel) => {
     const group = panel.dataset.pageGroup;
-    if (group === "diagnosis") panel.hidden = !showDiagnosis;
-    if (group === "strategy") panel.hidden = !showStrategy;
-    if (group === "analytics") panel.hidden = !showAnalytics;
-    if (group === "system") panel.hidden = !showSystem;
+    const shouldShow = (group === "diagnosis" && showDiagnosis)
+      || (group === "strategy" && showStrategy)
+      || (group === "analytics" && showAnalytics)
+      || (group === "system" && showSystem);
+
+    if (shouldShow && panel.hidden) {
+      panel.hidden = false;
+      panel.classList.remove("page-enter");
+      void panel.offsetWidth;
+      panel.classList.add("page-enter");
+      return;
+    }
+
+    panel.hidden = !shouldShow;
   });
 
   if (refs.centerColumn) refs.centerColumn.hidden = !showDiagnosis;
@@ -289,9 +371,8 @@ function setWorkspacePage(page) {
   });
 
   state.currentPage = target;
+  animateVisiblePanels();
 }
-
-
 function toneToGaugeAngle(tone) {
   if (tone === "high") return 70;
   if (tone === "medium") return 0;
@@ -435,17 +516,18 @@ function updateSessionMeta() {
   const doneBatchCount = state.batchQueue.filter((item) => item.status === "done").length;
   const highCount = state.sessionRecords.filter((item) => item.riskTone === "high").length;
   const highShare = state.sessionRecords.length ? highCount / state.sessionRecords.length : 0;
-  refs.avgLatency.textContent = formatDuration(latencyAvg);
-  refs.sessionCount.textContent = `${state.sessionRecords.length}`;
-  refs.batchDoneCount.textContent = `${doneBatchCount}`;
-  refs.sessionDiagnoses.textContent = `${state.sessionRecords.length}`;
-  refs.highRiskShare.textContent = formatPercent(highShare);
-  refs.batchProgressText.textContent = state.batchQueue.length ? formatPercent(doneBatchCount / state.batchQueue.length) : "0%";
-  refs.runtimeLatency.textContent = formatDuration(latencyAvg);
-  refs.runtimeBatch.textContent = `${state.batchQueue.length}`;
-  refs.runtimeStrategy.textContent = state.strategyAvailable ? "可用" : "不可用";
-}
 
+  refs.avgLatency.textContent = formatDuration(latencyAvg);
+  animateNumericText(refs.sessionCount, state.sessionRecords.length, (value) => `${Math.round(value)}`);
+  animateNumericText(refs.batchDoneCount, doneBatchCount, (value) => `${Math.round(value)}`);
+  animateNumericText(refs.sessionDiagnoses, state.sessionRecords.length, (value) => `${Math.round(value)}`);
+  animateNumericText(refs.highRiskShare, highShare, (value) => formatPercent(value));
+  animateNumericText(refs.batchProgressText, state.batchQueue.length ? (doneBatchCount / state.batchQueue.length) : 0, (value) => formatPercent(value));
+
+  refs.runtimeLatency.textContent = formatDuration(latencyAvg);
+  refs.runtimeStrategy.textContent = state.strategyAvailable ? "可用" : "不可用";
+  animateNumericText(refs.runtimeBatch, state.batchQueue.length, (value) => `${Math.round(value)}`);
+}
 function renderModelSelect(models, currentPath = "") {
   refs.modelSelect.innerHTML = "";
   if (!models.length) {
@@ -621,8 +703,8 @@ function renderOverview(prediction, latencyMs = 0) {
       <ul class="guidance-list">${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
     </article>
   `;
+  applyRevealStagger(refs.resultOverview, ".overview-card, .overview-metric, .guidance-list li");
 }
-
 function renderCandidates(results) {
   if (!results.length) {
     refs.candidateList.className = "candidate-list empty-state";
@@ -664,8 +746,8 @@ function renderCandidates(results) {
       await fetchStrategy(name, event.currentTarget);
     });
   });
+  applyRevealStagger(refs.candidateList, ".candidate-card");
 }
-
 function renderDetailSummary(prediction, latencyMs = 0) {
   const primary = prediction.primary_result;
   if (!primary) {
@@ -681,8 +763,8 @@ function renderDetailSummary(prediction, latencyMs = 0) {
     <article class="detail-card"><h3>工程指标</h3><p>本次推理耗时 ${escapeHtml(formatDuration(latencyMs))}，当前设备 ${escapeHtml(state.currentModel?.device || "-")}，策略服务 ${escapeHtml(state.strategyAvailable ? "可用" : "不可用")}。</p></article>
     <article class="detail-card"><h3>建议的人工复核动作</h3><ul>${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></article>
   `;
+  applyRevealStagger(refs.detailSummary, ".detail-card");
 }
-
 function renderStrategy(data) {
   const items = data.items || [];
   if (!items.length) {
@@ -714,8 +796,10 @@ function renderStrategy(data) {
       </div>
     `)
     .join("");
-}
 
+  applyRevealStagger(refs.strategyPanel, ".accordion-card");
+  applyRevealStagger(refs.strategySources, ".source-item");
+}
 function renderChatThread() {
   if (!state.strategyChat.length) {
     refs.strategyChat.className = "chat-thread empty-detail";
@@ -747,6 +831,7 @@ function buildChartRows(entries, formatter) {
 
 function renderAnalytics() {
   updateSessionMeta();
+
   if (!state.sessionRecords.length) {
     refs.labelChart.className = "chart-list empty-state compact-empty";
     refs.labelChart.textContent = "会话内暂无诊断数据。";
@@ -760,26 +845,32 @@ function renderAnalytics() {
       riskMap.set(item.riskLevel, (riskMap.get(item.riskLevel) || 0) + 1);
     });
     const total = state.sessionRecords.length;
-    const labelEntries = Array.from(labelMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([label, value]) => ({ label, value, ratio: value / total }));
+    const labelEntries = Array.from(labelMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([label, value]) => ({ label, value, ratio: value / total }));
     const riskEntries = Array.from(riskMap.entries()).map(([label, value]) => ({ label, value, ratio: total ? value / total : 0 }));
     refs.labelChart.className = "chart-list";
     refs.labelChart.innerHTML = buildChartRows(labelEntries, (value, ratio) => `${value} 次 · ${formatPercent(ratio)}`);
     refs.riskChart.className = "chart-list";
     refs.riskChart.innerHTML = buildChartRows(riskEntries, (value, ratio) => `${value} 次 · ${formatPercent(ratio)}`);
+    applyRevealStagger(refs.labelChart, ".chart-row");
+    applyRevealStagger(refs.riskChart, ".chart-row");
   }
+
   if (!state.batchQueue.length) {
     refs.batchProgress.className = "progress-stack empty-state compact-empty";
     refs.batchProgress.textContent = "尚未建立批量任务。";
-    return;
+  } else {
+    refs.batchProgress.className = "progress-stack";
+    refs.batchProgress.innerHTML = state.batchQueue.slice(0, 6).map((item) => {
+      const resultText = item.result?.primary_result?.readable_name || item.error || "等待识别";
+      const statusMeta = getBatchStatusMeta(item.status);
+      return `<article class="batch-result-card"><div class="batch-row"><strong>${escapeHtml(item.file.name)}</strong><span class="batch-status">${escapeHtml(statusMeta.label)}</span></div><p class="batch-meta">${escapeHtml(resultText)}</p></article>`;
+    }).join("");
+    applyRevealStagger(refs.batchProgress, ".batch-result-card");
   }
-  refs.batchProgress.className = "progress-stack";
-  refs.batchProgress.innerHTML = state.batchQueue.slice(0, 6).map((item) => {
-    const resultText = item.result?.primary_result?.readable_name || item.error || "等待识别";
-    const statusMeta = getBatchStatusMeta(item.status);
-    return `<article class="batch-result-card"><div class="batch-row"><strong>${escapeHtml(item.file.name)}</strong><span class="batch-status">${escapeHtml(statusMeta.label)}</span></div><p class="batch-meta">${escapeHtml(resultText)}</p></article>`;
-  }).join("");
 }
-
 function renderBatchSummary() {
   if (!refs.batchSummary && refs.batchQueue?.parentElement) {
     const summary = document.createElement("div");
@@ -822,6 +913,7 @@ async function retryBatchItem(itemId) {
   const item = state.batchQueue.find((entry) => entry.id === itemId);
   if (!item || item.status !== "失败") return;
 
+  setSystemTimeline("batch");
   state.batchRunning = true;
   syncButtons();
   setMessage(`正在重试：${item.file.name}`);
@@ -839,6 +931,7 @@ async function retryBatchItem(itemId) {
   } else {
     setMessage(`重试失败：${item.file.name}，请检查样本或网络。`, true);
   }
+  setSystemTimeline("model");
 }
 function renderBatchQueue() {
   renderBatchSummary();
@@ -892,6 +985,8 @@ function renderBatchQueue() {
       await retryBatchItem(itemId);
     });
   });
+
+  applyRevealStagger(refs.batchQueue, ".batch-task-card");
 }
 function pushSessionRecord(prediction, latencyMs, source = "single") {
   const primary = prediction.primary_result;
@@ -946,6 +1041,7 @@ async function loadModel() {
     setMessage("没有可加载的模型。", true);
     return;
   }
+  setSystemTimeline("model");
   setLoading(refs.loadModelBtn, true);
   setMessage("正在加载模型...");
   try {
@@ -990,6 +1086,7 @@ async function predictImage() {
   }
   const minScanDurationMs = 4500;
   const scanDelay = new Promise((resolve) => setTimeout(resolve, minScanDurationMs));
+  setSystemTimeline("inference");
   setLoading(refs.predictBtn, true);
   setScanning(true, "AI 正在扫描叶片纹理...");
   setMessage("正在执行模型推理...");
@@ -1028,6 +1125,7 @@ async function predictImage() {
     setMessage(error.message || "识别失败，请检查后端日志。", true);
   } finally {
     setScanning(false);
+    setSystemTimeline("model");
     setLoading(refs.predictBtn, false);
     syncButtons();
     renderSteps();
@@ -1040,6 +1138,7 @@ async function fetchStrategy(name, button) {
     setMessage("当前环境未启用策略资料服务。", true);
     return;
   }
+  setSystemTimeline("strategy");
   setLoading(button, true);
   setInfoPill(refs.strategyStatus, "整理中", "success");
   refs.strategyHint.textContent = `正在整理 ${name} 的资料`;
@@ -1080,6 +1179,7 @@ async function fetchStrategy(name, button) {
     refs.strategyChat.textContent = "首轮策略整理失败，暂时无法继续追问。";
     setMessage(error.message || "资料整理失败，请检查 API Key、Base URL 或网络连接。", true);
   } finally {
+    setSystemTimeline("model");
     setLoading(button, false);
     syncButtons();
   }
@@ -1089,6 +1189,7 @@ async function sendStrategyQuestion() {
   setWorkspacePage("strategy");
   const question = refs.strategyQuestion.value.trim();
   if (!(question && state.latestStrategy && state.currentStrategyName)) return;
+  setSystemTimeline("strategy");
   setLoading(refs.sendStrategyBtn, true);
   state.strategyChat.push({ role: "user", content: question });
   renderChatThread();
@@ -1117,6 +1218,7 @@ async function sendStrategyQuestion() {
     setInfoPill(refs.strategyStatus, "追问失败", "error");
     setMessage(error.message || "追问失败，请检查 API Key、Base URL 或网络。", true);
   } finally {
+    setSystemTimeline("model");
     setLoading(refs.sendStrategyBtn, false);
     syncButtons();
   }
@@ -1185,6 +1287,7 @@ async function runBatchProcessing() {
     return;
   }
 
+  setSystemTimeline("batch");
   state.batchRunning = true;
   renderBatchQueue();
   renderAnalytics();
@@ -1198,6 +1301,7 @@ async function runBatchProcessing() {
   }
 
   state.batchRunning = false;
+  setSystemTimeline("model");
   setLoading(refs.runBatchBtn, false);
   syncButtons();
   renderBatchQueue();
@@ -1242,6 +1346,7 @@ function exportBatchCsv() {
 async function initPage() {
   clearDiagnosisViews();
   clearVisualShowcase();
+  setSystemTimeline("model");
   renderVisionStage();
   renderBatchQueue();
   renderAnalytics();
@@ -1325,6 +1430,18 @@ refs.uploadZone.addEventListener("drop", (event) => {
 });
 
 initPage();
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

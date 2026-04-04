@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
@@ -39,6 +40,7 @@ class InferenceService:
         self.model = None
         self.idx_to_label: dict[str, str] = {}
         self.knowledge_base: dict[str, dict[str, Any]] = {}
+        self.label_zh_map: dict[str, str] = {}
         self.loaded_model_path = ""
         self.loaded_model_config: dict[str, Any] = {}
 
@@ -90,11 +92,79 @@ class InferenceService:
 
         self.model = model
         self.idx_to_label = idx_to_label
+        self.label_zh_map = self._load_label_zh_map(path.parent)
         self.loaded_model_path = str(path)
         self.loaded_model_config = config or {}
 
         return self.model_summary()
 
+    @staticmethod
+    def _load_label_zh_map(model_dir: Path) -> dict[str, str]:
+        map_paths = (
+            model_dir / "label_zh_map.json",
+            model_dir / "readable_name_zh_map.json",
+            model_dir / "name_zh_map.json",
+        )
+
+        for map_path in map_paths:
+            if not map_path.exists():
+                continue
+            try:
+                with map_path.open("r", encoding="utf-8-sig") as file:
+                    payload = json.load(file)
+            except Exception as exc:
+                logger.warning("读取中文名映射失败: %s (%s)", map_path, exc)
+                continue
+
+            if not isinstance(payload, dict):
+                logger.warning("中文名映射格式无效(应为 JSON object): %s", map_path)
+                continue
+
+            normalized: dict[str, str] = {}
+            for key, value in payload.items():
+                norm_key = str(key).strip()
+                norm_value = str(value).strip()
+                if norm_key and norm_value:
+                    normalized[norm_key] = norm_value
+
+            if normalized:
+                logger.info("已加载中文名映射: %s (%d 条)", map_path.name, len(normalized))
+            return normalized
+
+        return {}
+
+    def resolve_readable_name(self, idx_str: str, kb_entry: dict[str, Any]) -> str:
+        original_label = str(self.idx_to_label.get(idx_str, kb_entry.get("original_label", f"unknown_{idx_str}")))
+        english_name = str(kb_entry.get("readable_name", "")).strip() or original_label
+
+        zh_candidates = [
+            str(kb_entry.get("readable_name_zh", "")).strip(),
+            str(kb_entry.get("name_zh", "")).strip(),
+            str(self.label_zh_map.get(idx_str, "")).strip(),
+            str(self.label_zh_map.get(original_label, "")).strip(),
+            str(self.label_zh_map.get(english_name, "")).strip(),
+        ]
+
+        chinese_name = ""
+        for name in zh_candidates:
+            if name:
+                chinese_name = name
+                break
+
+        english_name = re.sub(r"\s+", " ", english_name).strip()
+        if chinese_name:
+            chinese_name = re.sub(r"\s+", " ", chinese_name).strip()
+
+            # 避免“中文（英文）”再拼接一次英文导致双括号
+            match = re.match(r"^(.*?)[（(]\s*([^（）()]+?)\s*[)）]\s*$", chinese_name)
+            if match and re.search(r"[A-Za-z]", match.group(2)):
+                chinese_name = match.group(1).strip()
+
+            if english_name and chinese_name and chinese_name != english_name:
+                return f"{chinese_name}（{english_name}）"
+            return chinese_name
+
+        return english_name or f"未知标签_{idx_str}"
     def model_summary(self) -> dict[str, Any]:
         parameter_count = 0
         if self.model is not None:
@@ -206,13 +276,14 @@ class InferenceService:
             idx_str = str(topk_indices[rank].item())
             kb_entry = self.knowledge_base.get(idx_str, {})
             risk = self.risk_profile(confidence)
-            readable_name = kb_entry.get("readable_name", f"未知标签_{idx_str}")
+            original_label = self.idx_to_label.get(idx_str, f"unknown_{idx_str}")
+            readable_name = self.resolve_readable_name(idx_str, kb_entry)
 
             results.append(
                 {
                     "rank": rank + 1,
                     "label_index": idx_str,
-                    "original_label": self.idx_to_label.get(idx_str, f"unknown_{idx_str}"),
+                    "original_label": original_label,
                     "readable_name": readable_name,
                     "dataset": kb_entry.get("dataset", "未知数据集"),
                     "confidence": confidence,
@@ -543,5 +614,9 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("web_service:app", host="127.0.0.1", port=8000, reload=False)
+
+
+
+
 
 
