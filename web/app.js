@@ -101,6 +101,8 @@ const state = {
   systemStage: "model",
 };
 
+const SAMPLE_GALLERY_LIMIT = 4;
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -552,8 +554,9 @@ function renderSampleGallery() {
     refs.sampleGallery.textContent = "当前 sample_images 目录下没有可用图片。";
     return;
   }
+  const gallerySamples = state.sampleImages.slice(0, SAMPLE_GALLERY_LIMIT);
   refs.sampleGallery.className = "sample-gallery";
-  refs.sampleGallery.innerHTML = state.sampleImages
+  refs.sampleGallery.innerHTML = gallerySamples
     .map((sample) => {
       const activeClass = state.selectedSampleName === sample.name ? " is-active" : "";
       return `
@@ -567,7 +570,7 @@ function renderSampleGallery() {
   refs.sampleGallery.querySelectorAll(".sample-card").forEach((button) => {
     button.addEventListener("click", async () => {
       const name = decodeURIComponent(button.dataset.name || "");
-      const sample = state.sampleImages.find((item) => item.name === name);
+      const sample = gallerySamples.find((item) => item.name === name);
       if (sample) await useSample(sample);
     });
   });
@@ -1084,7 +1087,7 @@ async function predictImage() {
     setMessage("请先加载模型并选择图片。", true);
     return;
   }
-  const minScanDurationMs = 4500;
+  const minScanDurationMs = 2500;
   const scanDelay = new Promise((resolve) => setTimeout(resolve, minScanDurationMs));
   setSystemTimeline("inference");
   setLoading(refs.predictBtn, true);
@@ -1430,6 +1433,9 @@ refs.uploadZone.addEventListener("drop", (event) => {
 });
 
 initPage();
+
+
+
 
 
 
